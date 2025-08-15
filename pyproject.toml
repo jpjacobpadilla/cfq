@@ -1,0 +1,7 @@
+[project]
+name = "cfq"
+version = "0.1.0"
+description = "A high-level Cloudflare Queues consumer library for Python"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
