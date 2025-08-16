@@ -1,26 +1,32 @@
+import time
 import asyncio
+import logging
 import inspect
+import contextlib
 from typing import Callable, Any
 
 from cloudflare import AsyncCloudflare
 
 
-class Queue:
+class CFQ:
     def __init__(
         self,
         api_token: str,
         account_id: str,
         *,
-        max_workers: int = 5,
+        max_workers: int = 10,
         polling_interval_ms: float = 1_000,
         max_batch_size: int = 10,
         allow_retry: bool = False,
-        retry_delay_seconds: int = 0
+        retry_delay_seconds: int = 0,
+        heartbeat_log_interval_seconds: int = 0,
+        **kwargs
     ):
-        assert 0 < max_batch_size <= 100, 'Cloudflare specifies that the max_batch_size should be between 1 and 100: https://developers.cloudflare.com/queues/configuration/batching-retries/'
-        assert max_workers >= 1, 'max_workers must be greater than or equal to 1.'
-        assert polling_interval_ms >= 0, 'polling_interval_ms must be greater than or equal to 0.'
-        assert retry_delay_seconds >= 0, 'retry_delay_seconds must be greater than or equal to 0.'
+        assert 0 < max_batch_size <= 100, 'Cloudflare specifies that the `max_batch_size` should be between 1 and 100.'
+        assert max_workers >= 1, '`max_workers` must be greater than or equal to 1.'
+        assert polling_interval_ms >= 0, '`polling_interval_ms` must be greater than or equal to 0.'
+        assert retry_delay_seconds >= 0, '`retry_delay_seconds` must be greater than or equal to 0.'
+        assert heartbeat_log_interval_seconds >= 0, '`heartbeat_log_interval_seconds` must be greater than or equal to 0.'
 
         self.api_token = api_token
         self.account_id = account_id
@@ -29,59 +35,17 @@ class Queue:
         self.max_batch_size = max_batch_size
         self.retry_delay_seconds = retry_delay_seconds
         self.allow_retry = allow_retry
+        self.heartbeat_log_interval_seconds = heartbeat_log_interval_seconds
 
         self._consumers = {}
         self._poll_workers = []
+        self._client = None
+        self._heartbeat_task = None
+        self.messages_processed = 0
         self._stop_event = asyncio.Event()
-        self._client = AsyncCloudflare(api_token=api_token)
 
-    async def _poller(self, visibility_timeout_ms, fn, queue_id):
-        workers = set()
+        self.log = kwargs.get("logger") or logging.getLogger("cfq")
 
-        print('h')
-        while not self._stop_event.is_set():
-            resp = await self._client.queues.messages.pull(
-                queue_id,
-                account_id=self.account_id,
-                batch_size=self.max_batch_size,
-                visibility_timeout_ms=visibility_timeout_ms
-            )
-
-            if not resp:
-                await asyncio.sleep(self.polling_interval_ms / 1000.0)
-                continue
-
-            for message in resp.messages or []:
-                while len(workers) >= self.max_workers:
-                    done, pending = await asyncio.wait(workers, return_when=asyncio.FIRST_COMPLETED)
-                    workers = pending
-                t = asyncio.create_task(self._handler(message, fn, queue_id))
-                workers.add(t)
-                t.add_done_callback(workers.discard)
-
-    async def _handler(self, message, fn, queue_id):
-        try:
-            await fn(message)
-        except Exception:
-            if self.allow_retry:
-                # noinspection PyTypeChecker
-                await self._client.queues.messages.ack(
-                    queue_id,
-                    account_id=self.account_id,
-                    retries=[
-                        {
-                            'delay_seconds': self.retry_delay_seconds,
-                            'lease_id': message.lease_id
-                        }
-                    ]
-                )
-        else:
-            # noinspection PyTypeChecker
-            await self._client.queues.messages.ack(
-                queue_id,
-                account_id=self.account_id,
-                acks=[{'lease_id': message.lease_id}]
-            )
 
     def consumer(self, queue_id: str, visibility_timeout_ms: int = 60_000):
         def decorator(fn: Callable[[Any], Any]):
@@ -98,25 +62,92 @@ class Queue:
             return fn
         return decorator
 
+    async def _poller(self, visibility_timeout_ms, fn, queue_id):
+        handler_name = getattr(fn, "__name__", str(fn))
+        workers = set()
+
+        while not self._stop_event.is_set():
+            resp = await self._client.queues.messages.pull(
+                queue_id,
+                account_id=self.account_id,
+                batch_size=self.max_batch_size,
+                visibility_timeout_ms=visibility_timeout_ms
+            )
+
+            if not resp.messages:
+                await asyncio.sleep(self.polling_interval_ms / 1000.0)
+                continue
+
+            self.log.info(f'Pulled {len(resp.messages)} message{'s' if len(resp.messages) > 1 else ''} from queue: {queue_id}')
+
+            for message in resp.messages or []:
+                while len(workers) >= self.max_workers:
+                    done, pending = await asyncio.wait(workers, return_when=asyncio.FIRST_COMPLETED)
+                    workers = pending
+                t = asyncio.create_task(self._handler(message, fn, queue_id, handler_name))
+                workers.add(t)
+                t.add_done_callback(workers.discard)
+
+    async def _handler(self, message, fn, queue_id, handler_name):
+        try:
+            start = time.perf_counter()
+            await fn(message)
+            runtime = (time.perf_counter() - start ) * 1000
+
+            self.log.info(f"Task finished | consumer: '{handler_name}' runtime: {runtime:.2f} ms")
+
+            self.messages_processed += 1
+
+            await self._client.queues.messages.ack(
+                queue_id,
+                account_id=self.account_id,
+                acks=[{"lease_id": message.lease_id}],
+            )
+
+        except Exception:
+            if self.allow_retry:
+                await self._client.queues.messages.ack(
+                    queue_id,
+                    account_id=self.account_id,
+                    retries=[{"delay_seconds": self.retry_delay_seconds, "lease_id": message.lease_id}],
+                )
+
+    async def _heartbeat_loop(self):
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=self.heartbeat_log_interval_seconds)
+            except asyncio.TimeoutError:
+                pass
+
+            self.log.info(f'Heartbeat | Processed {self.messages_processed} message{'s' if self.messages_processed > 1 else ''} in last {self.heartbeat_log_interval_seconds} seconds')
+            self.messages_processed = 0
+
     async def start(self):
+        self._client = AsyncCloudflare(api_token=self.api_token)
+
         self._stop_event.clear()
 
         for queue_id, consumer_info in self._consumers.items():
             coro = self._poller(consumer_info['visibility_timeout_ms'], consumer_info['fn'], queue_id)
             self._poll_workers.append(asyncio.create_task(coro))
 
+        if self.heartbeat_log_interval_seconds:
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(), name="heartbeat")
+
+        self.log.info(f'Starting consumer | max workers: {self.max_workers} consumers: {len(self._consumers)}')
+
         await asyncio.gather(*self._poll_workers)
 
     async def stop(self):
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._heartbeat_task
+            self._heartbeat_task = None
+
+        if self._poll_workers:
+            await asyncio.gather(*self._poll_workers, return_exceptions=True)
+            self._poll_workers.clear()
+
         self._stop_event.set()
         self._poll_workers.clear()
-
-        await asyncio.gather(*self._poll_workers, return_exceptions=True)
-
-    async def __aenter__(self):
-        await self.start()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.stop()
-
