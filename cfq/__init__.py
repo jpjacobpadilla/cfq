@@ -21,7 +21,7 @@ class CFQ:
         allow_retry: bool = False,
         retry_delay_seconds: int = 0,
         heartbeat_interval_seconds: int = 0,
-        **kwargs
+        **kwargs,
     ):
         self.api_token = api_token
         self.account_id = account_id
@@ -41,13 +41,11 @@ class CFQ:
 
         self.log = kwargs.get("logger") or logging.getLogger("cfq")
 
-    def consumer(
-        self,
-        queue_id: str,
-        visibility_timeout_ms: int = 60_000
-    ):
+    def consumer(self, queue_id: str, visibility_timeout_ms: int = 60_000):
         def decorator(fn: Callable[[Message], Awaitable[Any]]):
-            assert inspect.iscoroutinefunction(fn), 'Consumer function must be a coroutine'
+            assert inspect.iscoroutinefunction(fn), (
+                "Consumer function must be a coroutine"
+            )
 
             if queue_id in self._consumers:
                 raise ValueError(f"Duplicate consumer for queue_id={queue_id}")
@@ -58,13 +56,14 @@ class CFQ:
             }
 
             return fn
+
         return decorator
 
     async def _poller(
         self,
         visibility_timeout_ms: int,
         fn: Callable[[Message], Awaitable[Any]],
-        queue_id: str
+        queue_id: str,
     ) -> None:
         handler_name = getattr(fn, "__name__", str(fn))
         workers = set()
@@ -74,20 +73,26 @@ class CFQ:
                 queue_id,
                 account_id=self.account_id,
                 batch_size=self.max_batch_size,
-                visibility_timeout_ms=visibility_timeout_ms
+                visibility_timeout_ms=visibility_timeout_ms,
             )
 
             if not resp.messages:
                 await asyncio.sleep(self.polling_interval_ms / 1000.0)
                 continue
 
-            self.log.info(f'Pulled {len(resp.messages)} message{'s' if len(resp.messages) > 1 else ''} from queue: {queue_id}')
+            self.log.info(
+                f"Pulled {len(resp.messages)} message{'s' if len(resp.messages) > 1 else ''} from queue: {queue_id}"
+            )
 
             for message in resp.messages or []:
                 while len(workers) >= self.max_workers:
-                    done, pending = await asyncio.wait(workers, return_when=asyncio.FIRST_COMPLETED)
+                    done, pending = await asyncio.wait(
+                        workers, return_when=asyncio.FIRST_COMPLETED
+                    )
                     workers = pending
-                t = asyncio.create_task(self._handler(message, fn, queue_id, handler_name))
+                t = asyncio.create_task(
+                    self._handler(message, fn, queue_id, handler_name)
+                )
                 workers.add(t)
                 t.add_done_callback(workers.discard)
 
@@ -96,14 +101,16 @@ class CFQ:
         message: Message,
         fn: Callable[[Message], Awaitable[Any]],
         queue_id: str,
-        handler_name: str
+        handler_name: str,
     ) -> None:
         try:
             start = time.perf_counter()
             await fn(message)
-            runtime = (time.perf_counter() - start ) * 1000
+            runtime = (time.perf_counter() - start) * 1000
 
-            self.log.info(f"Task finished | consumer: '{handler_name}' runtime: {runtime:.2f} ms")
+            self.log.info(
+                f"Task finished | consumer: '{handler_name}' runtime: {runtime:.2f} ms"
+            )
 
             self.messages_processed += 1
 
@@ -118,17 +125,26 @@ class CFQ:
                 await self._client.queues.messages.ack(
                     queue_id,
                     account_id=self.account_id,
-                    retries=[{"delay_seconds": self.retry_delay_seconds, "lease_id": message.lease_id}],
+                    retries=[
+                        {
+                            "delay_seconds": self.retry_delay_seconds,
+                            "lease_id": message.lease_id,
+                        }
+                    ],
                 )
 
     async def _heartbeat_loop(self):
         while not self._stop_event.is_set():
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self.heartbeat_log_interval_seconds)
+                await asyncio.wait_for(
+                    self._stop_event.wait(), timeout=self.heartbeat_log_interval_seconds
+                )
             except asyncio.TimeoutError:
                 pass
 
-            self.log.info(f'Heartbeat | Processed {self.messages_processed} message{'s' if self.messages_processed > 1 else ''} in last {self.heartbeat_log_interval_seconds} seconds')
+            self.log.info(
+                f"Heartbeat | Processed {self.messages_processed} message{'s' if self.messages_processed > 1 else ''} in last {self.heartbeat_log_interval_seconds} seconds"
+            )
             self.messages_processed = 0
 
     async def start(self):
@@ -136,13 +152,19 @@ class CFQ:
         self._stop_event.clear()
 
         for queue_id, consumer_info in self._consumers.items():
-            coro = self._poller(consumer_info['visibility_timeout_ms'], consumer_info['fn'], queue_id)
+            coro = self._poller(
+                consumer_info["visibility_timeout_ms"], consumer_info["fn"], queue_id
+            )
             self._poll_workers.append(asyncio.create_task(coro))
 
         if self.heartbeat_log_interval_seconds:
-            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(), name="heartbeat")
+            self._heartbeat_task = asyncio.create_task(
+                self._heartbeat_loop(), name="heartbeat"
+            )
 
-        self.log.info(f'Starting consumer | max workers: {self.max_workers} consumers: {len(self._consumers)}')
+        self.log.info(
+            f"Starting consumer | max workers: {self.max_workers} consumers: {len(self._consumers)}"
+        )
 
         await asyncio.gather(*self._poll_workers)
 
