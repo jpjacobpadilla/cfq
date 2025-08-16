@@ -3,9 +3,10 @@ import asyncio
 import logging
 import inspect
 import contextlib
-from typing import Callable, Any
+from typing import Callable, Any, Awaitable
 
 from cloudflare import AsyncCloudflare
+from cloudflare.types.queues.message_pull_response import Message
 
 
 class CFQ:
@@ -19,23 +20,17 @@ class CFQ:
         max_batch_size: int = 10,
         allow_retry: bool = False,
         retry_delay_seconds: int = 0,
-        heartbeat_log_interval_seconds: int = 0,
+        heartbeat_interval_seconds: int = 0,
         **kwargs
     ):
-        assert 0 < max_batch_size <= 100, 'Cloudflare specifies that the `max_batch_size` should be between 1 and 100.'
-        assert max_workers >= 1, '`max_workers` must be greater than or equal to 1.'
-        assert polling_interval_ms >= 0, '`polling_interval_ms` must be greater than or equal to 0.'
-        assert retry_delay_seconds >= 0, '`retry_delay_seconds` must be greater than or equal to 0.'
-        assert heartbeat_log_interval_seconds >= 0, '`heartbeat_log_interval_seconds` must be greater than or equal to 0.'
-
         self.api_token = api_token
         self.account_id = account_id
         self.max_workers = max_workers
         self.polling_interval_ms = polling_interval_ms
         self.max_batch_size = max_batch_size
-        self.retry_delay_seconds = retry_delay_seconds
         self.allow_retry = allow_retry
-        self.heartbeat_log_interval_seconds = heartbeat_log_interval_seconds
+        self.retry_delay_seconds = retry_delay_seconds
+        self.heartbeat_log_interval_seconds = heartbeat_interval_seconds
 
         self._consumers = {}
         self._poll_workers = []
@@ -46,9 +41,12 @@ class CFQ:
 
         self.log = kwargs.get("logger") or logging.getLogger("cfq")
 
-
-    def consumer(self, queue_id: str, visibility_timeout_ms: int = 60_000):
-        def decorator(fn: Callable[[Any], Any]):
+    def consumer(
+        self,
+        queue_id: str,
+        visibility_timeout_ms: int = 60_000
+    ):
+        def decorator(fn: Callable[[Message], Awaitable[Any]]):
             assert inspect.iscoroutinefunction(fn), 'Consumer function must be a coroutine'
 
             if queue_id in self._consumers:
@@ -62,7 +60,12 @@ class CFQ:
             return fn
         return decorator
 
-    async def _poller(self, visibility_timeout_ms, fn, queue_id):
+    async def _poller(
+        self,
+        visibility_timeout_ms: int,
+        fn: Callable[[Message], Awaitable[Any]],
+        queue_id: str
+    ) -> None:
         handler_name = getattr(fn, "__name__", str(fn))
         workers = set()
 
@@ -88,7 +91,13 @@ class CFQ:
                 workers.add(t)
                 t.add_done_callback(workers.discard)
 
-    async def _handler(self, message, fn, queue_id, handler_name):
+    async def _handler(
+        self,
+        message: Message,
+        fn: Callable[[Message], Awaitable[Any]],
+        queue_id: str,
+        handler_name: str
+    ) -> None:
         try:
             start = time.perf_counter()
             await fn(message)
@@ -124,7 +133,6 @@ class CFQ:
 
     async def start(self):
         self._client = AsyncCloudflare(api_token=self.api_token)
-
         self._stop_event.clear()
 
         for queue_id, consumer_info in self._consumers.items():
@@ -151,3 +159,4 @@ class CFQ:
 
         self._stop_event.set()
         self._poll_workers.clear()
+        self._client = None
