@@ -66,12 +66,12 @@ client = CFQ(
     max_workers=20,  # Shared across all consumers
 )
 
-@client.consumer(queue_id="email_queue")
+@client.consumer(queue_id="email_queue_id")
 async def handle_emails(message: Message):
     # Process email messages
     await send_email(message.body)
 
-@client.consumer(queue_id="webhook_queue", visibility_timeout_ms=30000)
+@client.consumer(queue_id="webhook_queue_id", visibility_timeout_ms=30000)
 async def handle_webhooks(message: Message):
     # Process webhook messages with shorter timeout
     await process_webhook(message.body)
@@ -90,7 +90,7 @@ client = CFQ(
     max_batch_size=20,        # Pull up to 20 messages at once
     allow_retry=True,
     retry_delay_seconds=30,   # Wait 30s before retry
-    heartbeat_interval_seconds=60,  # Log stats every minute
+    heartbeat_interval_seconds=60,  # Log heartbeat every minute
 )
 ```
 
