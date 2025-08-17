@@ -128,7 +128,7 @@ class CFQ:
             else:
                 self.log.info(f'Task failed, not retrying | error: {e}')
 
-    async def _heartbeat_loop(self):
+    async def _heartbeat_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self.heartbeat_interval_seconds)
@@ -138,7 +138,8 @@ class CFQ:
                 )
                 self.messages_processed = 0
 
-    async def start(self):
+
+    async def start(self) -> None:
         self._client = AsyncCloudflare(api_token=self.api_token)
         self._stop_event.clear()
 
@@ -153,7 +154,7 @@ class CFQ:
 
         await asyncio.gather(*self._poll_workers)
 
-    async def stop(self):
+    async def stop(self) -> None:
         self._stop_event.set()
 
         if self._heartbeat_task:
