@@ -133,12 +133,10 @@ class CFQ:
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self.heartbeat_interval_seconds)
             except asyncio.TimeoutError:
-                pass
-
-            self.log.info(
-                f'Heartbeat | Processed {self.messages_processed} message{"s" if self.messages_processed > 1 else ""} in last {self.heartbeat_interval_seconds} seconds'
-            )
-            self.messages_processed = 0
+                self.log.info(
+                    f'Heartbeat | Processed {self.messages_processed} message{"s" if self.messages_processed > 1 else ""} in last {self.heartbeat_interval_seconds} seconds'
+                )
+                self.messages_processed = 0
 
     async def start(self):
         self._client = AsyncCloudflare(api_token=self.api_token)
