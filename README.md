@@ -28,17 +28,17 @@ uv add cfq
 
 ### CFQ Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
+| Parameter | Type | Default | Description                                  |
+|-----------|------|---------|----------------------------------------------|
 | `api_token` | `str` | *required* | Cloudflare API token with Queues permissions |
-| `account_id` | `str` | *required* | Your Cloudflare account identifier |
-| `max_workers` | `int` | `10` | Maximum concurrent message handlers |
+| `account_id` | `str` | *required* | Your Cloudflare account identifier           |
+| `max_workers` | `int` | `10` | Maximum concurrent message handlers (async workers) |
 | `polling_interval_ms` | `float` | `1000` | Polling interval in milliseconds when queue is empty |
-| `max_batch_size` | `int` | `10` | Messages to pull per request (1-100) |
-| `allow_retry` | `bool` | `True` | Whether to retry failed messages |
-| `retry_delay_seconds` | `int` | `0` | Delay before retrying failed messages |
-| `heartbeat_interval_seconds` | `int` | `0` | Heartbeat logging interval (0 = disabled) |
-| `logger` | `Logger` | `None` | Custom logger (defaults to "cfq" logger) |
+| `max_batch_size` | `int` | `10` | Messages to pull per request                 |
+| `allow_retry` | `bool` | `True` | Whether to retry failed messages             |
+| `retry_delay_seconds` | `int` | `0` | Delay before retrying failed messages        |
+| `heartbeat_interval_seconds` | `int` | `0` | Heartbeat logging interval (0 = disabled)    |
+| `logger` | `Logger` | `None` | Custom logger (defaults to "cfq" logger)     |
 
 ### Consumer Decorator Parameters
 
