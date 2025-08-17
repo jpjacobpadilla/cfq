@@ -2,29 +2,7 @@
 
 A high-level Python client for consuming messages from Cloudflare Queues with async workers.
 
-## Features
-
-- **Decorator-based consumers** - Register queue consumers with a simple `@client.consumer()` decorator
-- **Automatic message handling** - Built-in ACK and retry support with configurable retry delays
-- **Concurrent processing** - Configurable worker concurrency and batch processing
-- **Flexible polling** - Adjustable polling intervals and batch sizes
-- **Monitoring support** - Optional heartbeat logging to track message processing rates
-- **Error resilience** - Graceful error handling with optional retry mechanisms
-
-> **Note:** CFQ's API design is inspired by [TaskIQ](https://github.com/taskiq-python/taskiq) and [Celery](https://github.com/celery/celery), adapted for Cloudflare Queues.
-
-## Installation
-
-```bash
-pip install cfq
-# or
-uv add cfq
-```
-
-## Quick Start
-
 ```python
-import asyncio
 from cfq import CFQ
 from cloudflare.types.queues.message_pull_response import Message
 
@@ -37,20 +15,18 @@ client = CFQ(
 # Register a consumer for a specific queue
 @client.consumer(queue_id="your_queue_id")
 async def process_messages(message: Message):
-    # Process your message here
-    print(f"Received: {message.body}")
-    
-    # Message will be automatically ACKed on success
-    # or retried on exceptions.
+    # Messages will be automatically ACKed on success or retried on exceptions.
 
-async def main():
-    await client.start()  # Start consuming messages
-
-if __name__ == "__main__":
-    asyncio.run(main())
+await client.start()  # Start consuming messages
 ```
 
-## Configuration
+CFQ's API design is inspired by [TaskIQ](https://github.com/taskiq-python/taskiq) and [Celery](https://github.com/celery/celery), adapted for Cloudflare Queues.
+
+### Installation
+
+```bash
+uv add cfq
+```
 
 ### CFQ Parameters
 
@@ -80,7 +56,6 @@ async def my_consumer(message: Message):
 | `queue_id` | `str` | *required* | The Cloudflare Queue ID to consume from |
 | `visibility_timeout_ms` | `int` | `60000` | Message visibility timeout in milliseconds |
 
-## Advanced Usage
 
 ### Multiple Queue Consumers
 
@@ -104,7 +79,7 @@ async def handle_webhooks(message: Message):
 await client.start()
 ```
 
-### Custom Configuration
+### Custom Configuration Example
 
 ```python
 client = CFQ(
@@ -119,7 +94,7 @@ client = CFQ(
 )
 ```
 
-## Error Handling
+### Error Handling
 
 CFQ automatically handles message acknowledgment and retries:
 
@@ -128,7 +103,7 @@ CFQ automatically handles message acknowledgment and retries:
 - **Failure with retry disabled**: Failed messages are discarded
 - **Worker limits**: New messages wait for available workers when `max_workers` is reached
 
-## Monitoring
+### Monitoring
 
 Enable heartbeat logging to monitor processing rates:
 
