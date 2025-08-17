@@ -4,20 +4,18 @@ A high-level Python client for consuming messages from Cloudflare Queues with as
 
 ```python
 from cfq import CFQ
-from cloudflare.types.queues.message_pull_response import Message
 
-# Initialize the client
 client = CFQ(
     api_token="your_cloudflare_api_token",
     account_id="your_account_id",
 )
 
-# Register a consumer for a specific queue
 @client.consumer(queue_id="your_queue_id")
-async def process_messages(message: Message):
-    # Messages will be automatically ACKed on success or retried on exceptions.
+async def process_messages(message):
+    # Messages will be automatically ACKed on success 
+    # or sent back to the queue to be retried on exceptions.
 
-await client.start()  # Start consuming messages
+await client.start()
 ```
 
 CFQ's API design is inspired by [TaskIQ](https://github.com/taskiq-python/taskiq) and [Celery](https://github.com/celery/celery), adapted for Cloudflare Queues.
@@ -45,6 +43,8 @@ uv add cfq
 ### Consumer Decorator Parameters
 
 ```python
+from cloudflare.types.queues.message_pull_response import Message
+
 @client.consumer(queue_id="queue_id", visibility_timeout_ms=60000)
 async def my_consumer(message: Message):
     # Your message processing logic
