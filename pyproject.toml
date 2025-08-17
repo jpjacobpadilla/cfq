@@ -7,3 +7,15 @@ requires-python = ">=3.13"
 dependencies = [
     "cloudflare>=4.3.1",
 ]
+
+[tool.setuptools.packages.find]
+include = ["cfq"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["I", "TID"]
+
+[tool.ruff.format]
+quote-style = "single"
