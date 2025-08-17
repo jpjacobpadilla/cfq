@@ -46,6 +46,8 @@ class CFQ:
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
 
         self.log = kwargs.get('logger') or logging.getLogger('cfq')
+        if not kwargs.get('httpx_logs'):
+            logging.getLogger("httpx").setLevel(logging.WARNING)
 
         self._consumers = {}
         self._poll_workers = []
