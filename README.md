@@ -35,7 +35,7 @@ uv add cfq
 | `max_workers` | `int` | `10`       | Maximum concurrent message handlers (async workers)           |
 | `polling_interval_ms` | `float` | `1000`     | Polling interval in milliseconds when queue is empty          |
 | `flush_interval_ms` | `float` | `1000`     | Interval in milliseconds to send acks / retries to Cloudflare |
-| `max_batch_size` | `int` | `10`       | Messages to pull per request                                  |
+| `max_batch_size` | `int` | `30`       | Messages to pull per request                                  |
 | `allow_retry` | `bool` | `True`     | Whether to retry failed messages                              |
 | `retry_delay_seconds` | `int` | `0`        | Delay before retrying failed messages                         |
 | `heartbeat_interval_seconds` | `int` | `0`        | Heartbeat logging interval (0 = disabled)                     |
