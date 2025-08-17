@@ -16,7 +16,7 @@ def before_sleep_log(logger, level):
     def log_retry(retry_state):
         exc = retry_state.outcome.exception()
         attempt = retry_state.attempt_number
-        logger.log(level, f'Retrying cloudflare request | attempt {attempt} error: {exc}')
+        logger.log(level, f'Retrying Cloudflare request | attempt {attempt} error: {exc}')
     return log_retry
 
 
