@@ -161,7 +161,7 @@ class CFQ:
 
     async def _ack_flusher(self):
         while not self._stop_event.is_set():
-            await asyncio.sleep(self.flush_interval_ms)
+            await asyncio.sleep(self.flush_interval_ms / 1000.0)
             for queue_id in self._consumers:
                 await self._flush_acks_retries(queue_id)
 
