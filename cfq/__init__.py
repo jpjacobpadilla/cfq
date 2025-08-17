@@ -17,7 +17,7 @@ class CFQ:
         *,
         max_workers: int = 10,
         polling_interval_ms: float = 1_000,
-        max_batch_size: int = 10,
+        max_batch_size: int = 30,
         allow_retry: bool = True,
         retry_delay_seconds: int = 0,
         heartbeat_interval_seconds: int = 0,
