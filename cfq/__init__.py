@@ -18,7 +18,7 @@ class CFQ:
         max_workers: int = 10,
         polling_interval_ms: float = 1_000,
         max_batch_size: int = 10,
-        allow_retry: bool = False,
+        allow_retry: bool = True,
         retry_delay_seconds: int = 0,
         heartbeat_interval_seconds: int = 0,
         **kwargs,
@@ -30,7 +30,7 @@ class CFQ:
         self.max_batch_size = max_batch_size
         self.allow_retry = allow_retry
         self.retry_delay_seconds = retry_delay_seconds
-        self.heartbeat_log_interval_seconds = heartbeat_interval_seconds
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
 
         self._consumers = {}
         self._poll_workers = []
@@ -120,8 +120,9 @@ class CFQ:
                 acks=[{"lease_id": message.lease_id}],
             )
 
-        except Exception:
+        except Exception as e:
             if self.allow_retry:
+                self.log.info(f"Task failed, retrying | error: {e}")
                 await self._client.queues.messages.ack(
                     queue_id,
                     account_id=self.account_id,
@@ -132,18 +133,20 @@ class CFQ:
                         }
                     ],
                 )
+            else:
+                self.log.info(f"Task failed, not retrying | error: {e}")
 
     async def _heartbeat_loop(self):
         while not self._stop_event.is_set():
             try:
                 await asyncio.wait_for(
-                    self._stop_event.wait(), timeout=self.heartbeat_log_interval_seconds
+                    self._stop_event.wait(), timeout=self.heartbeat_interval_seconds
                 )
             except asyncio.TimeoutError:
                 pass
 
             self.log.info(
-                f"Heartbeat | Processed {self.messages_processed} message{'s' if self.messages_processed > 1 else ''} in last {self.heartbeat_log_interval_seconds} seconds"
+                f"Heartbeat | Processed {self.messages_processed} message{'s' if self.messages_processed > 1 else ''} in last {self.heartbeat_interval_seconds} seconds"
             )
             self.messages_processed = 0
 
@@ -157,7 +160,7 @@ class CFQ:
             )
             self._poll_workers.append(asyncio.create_task(coro))
 
-        if self.heartbeat_log_interval_seconds:
+        if self.heartbeat_interval_seconds and self.heartbeat_interval_seconds > 0:
             self._heartbeat_task = asyncio.create_task(
                 self._heartbeat_loop(), name="heartbeat"
             )
@@ -169,6 +172,8 @@ class CFQ:
         await asyncio.gather(*self._poll_workers)
 
     async def stop(self):
+        self._stop_event.set()
+
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -179,6 +184,4 @@ class CFQ:
             await asyncio.gather(*self._poll_workers, return_exceptions=True)
             self._poll_workers.clear()
 
-        self._stop_event.set()
-        self._poll_workers.clear()
         self._client = None
